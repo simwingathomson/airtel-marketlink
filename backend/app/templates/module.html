@@ -1,0 +1,12 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><h1>{{ module.label }}</h1><a class="button" href="{{ url_for('web_new_record', module_key=module.key) }}">Add</a></div>
+<form class="toolbar" method="get"><div class="search"><input name="search" value="{{ search or '' }}" placeholder="Search {{ module.label|lower }}"><button>Search</button></div></form>
+<table>
+  <thead><tr>{% for col in module.columns %}<th>{{ col.replace('_',' ') }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for row in rows %}<tr>{% for col in module.columns %}<td>{{ row.get(col, '') }}</td>{% endfor %}</tr>{% endfor %}
+  {% if not rows %}<tr><td colspan="{{ module.columns|length }}">No records found.</td></tr>{% endif %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,9 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><h1>Global Search</h1></div>
+<form class="toolbar" method="get"><div class="search"><input name="q" value="{{ q or '' }}" placeholder="Employee, resource, market, booth, partner"><button>Search</button></div></form>
+{% for group, rows in results.items() %}
+  <h2>{{ group.replace('_',' ').title() }}</h2>
+  <div class="card"><pre style="white-space:pre-wrap;margin:0">{{ rows }}</pre></div>
+{% endfor %}
+{% endblock %}

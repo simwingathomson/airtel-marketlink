@@ -1,0 +1,9 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><h1>Dashboard</h1><a class="button secondary" href="{{ url_for('web_reports') }}">Reports</a></div>
+<div class="grid">
+  {% for key, value in summary.items() %}
+  <div class="card"><div class="metric-label">{{ key.replace('_', ' ') }}</div><div class="metric-value">{{ value }}</div></div>
+  {% endfor %}
+</div>
+{% endblock %}

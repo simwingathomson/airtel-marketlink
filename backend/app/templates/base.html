@@ -1,0 +1,28 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title or 'Airtel MarketLink' }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='web.css') }}">
+</head>
+<body>
+{% if session.get('user_id') %}
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">AIRTEL MARKETLINK</div>
+    <div class="tagline">Connecting People, Partners & Markets.</div>
+    <div class="role">{{ session.get('role') }}</div>
+    <nav class="nav">
+      <a href="{{ url_for('web_dashboard') }}">Dashboard</a>
+      {% for label, endpoint in menu %}<a href="{{ endpoint }}">{{ label }}</a>{% endfor %}
+      <a href="{{ url_for('web_logout') }}">Logout</a>
+    </nav>
+  </aside>
+  <main class="main">{% block content %}{% endblock %}</main>
+</div>
+{% else %}
+{% block public %}{% endblock %}
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,16 @@
+﻿{% extends "base.html" %}
+{% block public %}
+<div class="login-page">
+  <form class="login-card" method="post">
+    <h1 class="brand">AIRTEL MARKETLINK</h1>
+    <p class="tagline">Connecting People, Partners & Markets.</p>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label>Username</label>
+    <input name="username" autocomplete="username" required>
+    <label>Password</label>
+    <input name="password" type="password" autocomplete="current-password" required>
+    <button style="width:100%;margin-top:18px">Sign In</button>
+    <p class="tagline" style="margin-top:18px">Demo: admin / admin123</p>
+  </form>
+</div>
+{% endblock %}

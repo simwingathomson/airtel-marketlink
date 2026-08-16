@@ -1,0 +1,9 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><h1>CSV Reports</h1></div>
+<div class="report-list">
+{% for report in reports %}
+  <div class="card"><strong>{{ report.replace('-', ' ').title() }}</strong><br><br><a class="button" href="{{ url_for('export_report', report_name=report) }}">Download CSV</a></div>
+{% endfor %}
+</div>
+{% endblock %}

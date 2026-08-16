@@ -1,0 +1,16 @@
+﻿{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><h1>Add {{ module.label }}</h1><a class="button secondary" href="{{ url_for('web_module', module_key=module.key) }}">Back</a></div>
+{% if error %}<div class="error">{{ error }}</div>{% endif %}
+<form method="post" class="card">
+  <div class="form-grid">
+  {% for field, label in module.fields %}
+    <div class="{% if field in ['description','notes','reason','discrepancies'] %}full{% endif %}">
+      <label>{{ label }}</label>
+      {% if field in ['description','notes','reason','discrepancies'] %}<textarea name="{{ field }}"></textarea>{% else %}<input name="{{ field }}">{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+  <button style="margin-top:16px">Save</button>
+</form>
+{% endblock %}
