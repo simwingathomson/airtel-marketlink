@@ -535,7 +535,12 @@ def create_app(test_config=None):
 
 def seed(app):
     with app.app_context():
-        if User.query.filter_by(username="admin").first(): return
+        existing_admin = User.query.filter_by(username="admin").first()
+        if existing_admin:
+            existing_admin.set_password("admin123")
+            existing_admin.active = True
+            db.session.commit()
+            return
         cats = [ResourceCategory(name=n, group=g) for g, names in {
             "Devices": ["Smartphone", "Tablet", "Laptop", "POS", "MiFi", "Router", "Power bank"],
             "Clothing": ["Vendor jacket", "T-shirt", "Cap", "Reflective vest"],
