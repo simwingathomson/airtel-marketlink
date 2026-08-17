@@ -142,7 +142,7 @@ Build: pip install -r requirements-server.txt
 Start: gunicorn --bind 0.0.0.0:$PORT wsgi:app
 ```
 
-SQLite is included for development and initial deployment. Render filesystem persistence may require persistent disk storage or migration to PostgreSQL for reliable production data persistence. The SQLAlchemy layer is designed to be switched later through `DATABASE_URL`.
+Production deployment should use Neon Postgres through `DATABASE_URL`. SQLite remains available only as the local fallback when `DATABASE_URL` is not set. In Render, create a Neon database, copy its pooled connection string, and add it as the `DATABASE_URL` environment variable.
 
 ## Environment Variables
 
@@ -193,3 +193,22 @@ audits
 The desktop sidebar includes real API-backed screens for resource assignments, transfers, returns, resource requests, incidents, tasks, audits, notifications, global search, and CSV reports. Buttons save records through the Flask API instead of acting as placeholders.
 
 
+
+
+## Neon Postgres Setup
+
+1. Create a Neon project and database.
+2. Copy the pooled connection string from Neon. It should start with `postgresql://`.
+3. In Render, open the Airtel MarketLink service and add this environment variable:
+
+```text
+DATABASE_URL=postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require
+```
+
+4. Keep the Render start command as:
+
+```bash
+flask --app wsgi:app seed-data && gunicorn --bind 0.0.0.0:$PORT wsgi:app
+```
+
+The startup seed creates tables and demo records if needed, and also ensures `admin / admin123` works.

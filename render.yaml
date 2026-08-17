@@ -9,4 +9,6 @@
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        value: sqlite:///marketlink.db
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.11.9
