@@ -17,7 +17,7 @@ Browser Web App
 Flask Web + REST API + SQLAlchemy
         |
         v
-SQLite development database
+Neon PostgreSQL in production / SQLite fallback locally
 ```
 
 Render hosts the Flask web application and REST API together. Users access Airtel MarketLink in a browser.
@@ -139,7 +139,7 @@ The included `render.yaml` uses:
 
 ```text
 Build: pip install -r requirements-server.txt
-Start: gunicorn --bind 0.0.0.0:$PORT wsgi:app
+Start: flask --app wsgi:app seed-data && gunicorn --bind 0.0.0.0:$PORT wsgi:app
 ```
 
 Production deployment should use Neon Postgres through `DATABASE_URL`. SQLite remains available only as the local fallback when `DATABASE_URL` is not set. In Render, create a Neon database, copy its pooled connection string, and add it as the `DATABASE_URL` environment variable.
@@ -212,3 +212,19 @@ flask --app wsgi:app seed-data && gunicorn --bind 0.0.0.0:$PORT wsgi:app
 ```
 
 The startup seed creates tables and demo records if needed, and also ensures `admin / admin123` works.
+
+
+## Neon Connection Check
+
+After setting `DATABASE_URL`, verify the same way SINAMU does:
+
+```powershell
+python check_neon.py
+```
+
+Expected production output includes:
+
+```text
+database=neon-postgres
+connection_ok=True
+```

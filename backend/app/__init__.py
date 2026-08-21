@@ -11,11 +11,22 @@ from sqlalchemy import or_
 from .extensions import db
 from .models import *
 
+def database_uri():
+    uri = os.getenv("DATABASE_URL", "").strip()
+    if not uri:
+        return "sqlite:///marketlink.db"
+    if uri.startswith("postgres://"):
+        uri = "postgresql://" + uri[len("postgres://"):]
+    if uri.startswith("postgresql://") and "+" not in uri.split("://", 1)[0]:
+        uri = "postgresql+psycopg://" + uri[len("postgresql://"):]
+    return uri
+
 def create_app(test_config=None):
     app = Flask(__name__)
     app.config.update(
         SECRET_KEY=os.getenv("SECRET_KEY", "dev-change-me"),
-        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", "sqlite:///marketlink.db"),
+        SQLALCHEMY_DATABASE_URI=database_uri(),
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True, "pool_recycle": 300},
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
         MAX_CONTENT_LENGTH=8 * 1024 * 1024,
         UPLOAD_FOLDER="uploads",
