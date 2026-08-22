@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><div><h1>Scheduler</h1><p class="muted">Calendar, visits, tasks and plans.</p></div></div>
+<div class="dashboard-panels">
+  <section class="card"><h2>Visits</h2><table><thead><tr><th>Title</th><th>Date</th><th>Status</th></tr></thead><tbody>{% for visit in visits %}<tr><td>{{ visit.title }}</td><td>{{ visit.visit_date }}</td><td>{{ visit.status }}</td></tr>{% endfor %}</tbody></table></section>
+  <section class="card"><h2>Tasks</h2><table><thead><tr><th>Title</th><th>Due</th><th>Status</th></tr></thead><tbody>{% for task in tasks %}<tr><td>{{ task.title }}</td><td>{{ task.due_date or '-' }}</td><td>{{ task.status }}</td></tr>{% endfor %}</tbody></table></section>
+  <section class="card"><h2>Plans</h2><table><thead><tr><th>Title</th><th>Frequency</th><th>Status</th></tr></thead><tbody>{% for plan in plans %}<tr><td>{{ plan.title }}</td><td>{{ plan.frequency }}</td><td>{{ plan.status }}</td></tr>{% endfor %}</tbody></table></section>
+</div>
+{% endblock %}

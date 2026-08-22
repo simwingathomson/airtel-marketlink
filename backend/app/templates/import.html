@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><div><h1>Import Data</h1><p class="muted">Upload Excel workbooks, preview columns, then import validated records.</p></div></div>
+<div class="card">
+  <h2>Download Templates</h2>
+  <div class="template-grid">{% for label, fields in data_types.items() %}<a class="button secondary" href="{{ url_for('download_template', data_type=label.lower().replace(' ', '-')) }}">{{ label }} Template</a>{% endfor %}</div>
+</div>
+<div class="card">
+  <h2>Product Import</h2>
+  <form method="post" action="/api/import/products" enctype="multipart/form-data">
+    <label>Excel file<input type="file" name="file" accept=".xlsx,.xls" required></label>
+    <label>Duplicate handling<select name="duplicate_strategy"><option value="skip">Skip duplicates</option><option value="update">Update existing records</option></select></label>
+    <button>Import Products</button>
+  </form>
+  <p class="muted">API preview endpoint: <code>/api/import/preview</code>. Product import validates SKU and product name before writing rows.</p>
+</div>
+{% endblock %}

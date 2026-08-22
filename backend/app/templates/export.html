@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="topbar"><div><h1>Export Data</h1><p class="muted">Download operational data in CSV format. Excel export can build on the same report map.</p></div></div>
+<div class="report-list">{% for report in reports %}<a class="card" href="{{ url_for('web_export_report', report_name=report) }}.csv">{{ report.replace('-', ' ').title() }} CSV</a>{% endfor %}</div>
+{% endblock %}

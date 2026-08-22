@@ -1,13 +1,21 @@
-﻿from datetime import datetime, date
+﻿from datetime import datetime, date, timedelta
 import csv
 import io
 import os
+import tempfile
 from functools import wraps
-from flask import Flask, Response, jsonify, redirect, render_template, request, g, session, url_for
+from flask import Flask, Response, jsonify, redirect, render_template, request, g, session, url_for, send_file
 from flask_cors import CORS
 from werkzeug.exceptions import BadRequest, Forbidden, NotFound, Unauthorized
 from werkzeug.utils import secure_filename
-from sqlalchemy import or_
+from sqlalchemy import or_, func
+from openpyxl import Workbook, load_workbook
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+except Exception:
+    Limiter = None
+    get_remote_address = None
 from .extensions import db
 from .models import *
 
@@ -35,6 +43,15 @@ def create_app(test_config=None):
         app.config.update(test_config)
     CORS(app)
     db.init_app(app)
+    limiter = Limiter(get_remote_address, app=app, default_limits=["200 per hour"]) if Limiter else None
+
+    @app.after_request
+    def security_headers(response):
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        return response
 
     @app.errorhandler(Exception)
     def handle_error(exc):
@@ -184,10 +201,26 @@ def create_app(test_config=None):
         "incidents": {"key":"incidents", "label":"Incidents", "model":ResourceIncident, "columns":["id","resource_id","incident_type","status","date"], "fields":[("resource_id","Resource ID"),("incident_type","Lost/Damaged/Stolen/Faulty"),("description","Description"),("location","Location")]},
         "tasks": {"key":"tasks", "label":"Tasks", "model":FieldTask, "columns":["id","title","assigned_employee_id","priority","status"], "fields":[("title","Task title"),("description","Description"),("assigned_employee_id","Assigned employee ID"),("priority","Priority"),("due_date","Due date YYYY-MM-DD")]},
         "audits": {"key":"audits", "label":"Audits", "model":MarketAudit, "columns":["id","market_id","auditor_id","audit_date","status"], "fields":[("market_id","Market ID"),("auditor_id","Auditor employee ID"),("discrepancies","Discrepancies"),("status","Status")]},
-        "notifications": {"key":"notifications", "label":"Notifications", "model":Notification, "columns":["id","title","message","unread","created_at"], "fields":[("title","Title"),("message","Message"),("user_id","User ID")]},
+        "products": {"key":"products", "label":"Products", "model":Product, "columns":["id","sku","name","unit_price","minimum_stock","status"], "fields":[("sku","SKU"),("name","Product name"),("category_id","Category ID"),("unit","Unit"),("unit_price","Unit price"),("minimum_stock","Minimum stock"),("status","Status")]},
+        "customers": {"key":"customers", "label":"Customers", "model":Customer, "columns":["id","customer_code","name","phone","location","status"], "fields":[("customer_code","Customer ID"),("name","Name"),("phone","Phone"),("email","Email"),("location","Location"),("market_id","Market ID"),("assigned_employee_id","Assigned employee ID"),("status","Status"),("notes","Notes")]},
+        "inventory_locations": {"key":"inventory_locations", "label":"Inventory Locations", "model":InventoryLocation, "columns":["id","location_code","name","location_type","status"], "fields":[("location_code","Location ID"),("name","Name"),("location_type","Type"),("market_id","Market ID"),("booth_id","Booth ID"),("partner_id","Partner ID"),("status","Status")]},
+        "stock": {"key":"stock", "label":"Stock", "model":InventoryStock, "columns":["id","product_id","location_id","quantity","updated_at"], "fields":[("product_id","Product ID"),("location_id","Location ID"),("quantity","Quantity")]},
+        "stock_movements": {"key":"stock_movements", "label":"Stock Movements", "model":StockMovement, "columns":["id","movement_code","product_id","movement_type","quantity","created_at"], "fields":[("movement_code","Movement ID"),("product_id","Product ID"),("from_location_id","From location ID"),("to_location_id","To location ID"),("quantity","Quantity"),("movement_type","Type"),("notes","Notes")]},
+        "orders": {"key":"orders", "label":"Orders", "model":Order, "columns":["id","order_number","customer_id","partner_id","status","total_amount"], "fields":[("order_number","Order number"),("customer_id","Customer ID"),("partner_id","Partner ID"),("status","Status"),("order_date","Order date YYYY-MM-DD"),("due_date","Due date YYYY-MM-DD"),("total_amount","Total amount"),("notes","Notes")]},
+        "sales": {"key":"sales", "label":"Sales", "model":Sale, "columns":["id","sale_number","customer_id","partner_id","sale_date","total_amount"], "fields":[("sale_number","Sale number"),("customer_id","Customer ID"),("partner_id","Partner ID"),("employee_id","Employee ID"),("market_id","Market ID"),("sale_date","Sale date YYYY-MM-DD"),("total_amount","Total amount"),("status","Status"),("notes","Notes")]},
+        "visits": {"key":"visits", "label":"Visits", "model":Visit, "columns":["id","title","visit_date","assigned_employee_id","status","priority"], "fields":[("title","Visit title"),("partner_id","Partner ID"),("customer_id","Customer ID"),("location","Location"),("visit_date","Visit date YYYY-MM-DD"),("start_time","Start time"),("end_time","End time"),("assigned_employee_id","Assigned employee ID"),("purpose","Purpose"),("status","Status"),("priority","Priority"),("notes","Notes")]},
+        "plans": {"key":"plans", "label":"Plans", "model":Plan, "columns":["id","title","frequency","start_date","status","priority"], "fields":[("title","Plan title"),("description","Description"),("start_date","Start date YYYY-MM-DD"),("end_date","End date YYYY-MM-DD"),("frequency","Frequency"),("assigned_employee_id","Assigned employee ID"),("priority","Priority"),("status","Status"),("reminder_days","Reminder days")]},
+        "preferences": {"key":"preferences", "label":"Notification Preferences", "model":NotificationPreference, "columns":["id","user_id","notification_type","in_app_enabled","email_enabled"], "fields":[("user_id","User ID"),("notification_type","Type"),("in_app_enabled","In app true/false"),("email_enabled","Email true/false"),("sms_enabled","SMS true/false")]},
+        "import_jobs": {"key":"import_jobs", "label":"Import Jobs", "model":ImportJob, "columns":["id","filename","data_type","status","total_rows","imported_rows"], "fields":[("filename","Filename"),("data_type","Data type"),("sheet_name","Sheet"),("status","Status")]},
+        "notifications": {"key":"notifications", "label":"Notifications", "model":Notification, "columns":["id","title","message","notification_type","unread","created_at"], "fields":[("title","Title"),("message","Message"),("notification_type","Type"),("user_id","User ID"),("related_type","Related type"),("related_id","Related ID")]},
     }
     web_role_menus = {
         "Administrator": list(web_modules),
+        "Super Administrator": list(web_modules),
+        "Manager": ["products","customers","partners","stock","stock_movements","orders","sales","visits","plans","tasks","notifications","import_jobs"],
+        "Sales/Agent": ["customers","partners","orders","sales","visits","tasks","notifications"],
+        "Inventory Officer": ["products","inventory_locations","stock","stock_movements","requests","incidents","notifications"],
+        "Viewer": ["products","customers","partners","stock","orders","sales","visits","tasks","notifications"],
         "ZBM": ["people","districts","territories","markets","booths","partners","resources","assignments","transfers","returns","tasks","audits","notifications"],
         "TSM": ["people","markets","booths","partners","resources","assignments","transfers","returns","requests","incidents","tasks","audits","notifications"],
         "TL": ["people","markets","booths","partners","resources","assignments","transfers","returns","requests","incidents","tasks","audits","notifications"],
@@ -198,7 +231,7 @@ def create_app(test_config=None):
     def web_menu():
         keys = web_role_menus.get(session.get("role", "TSE"), web_role_menus["TSE"])
         items = [(web_modules[k]["label"], url_for("web_module", module_key=k)) for k in keys]
-        items += [("Reports", url_for("web_reports")), ("Search", url_for("web_search"))]
+        items += [("Analytics", url_for("web_analytics")), ("Scheduler", url_for("web_scheduler")), ("Import Data", url_for("web_import")), ("Export Data", url_for("web_export")), ("Reports", url_for("web_reports")), ("Audit Logs", url_for("web_module", module_key="notifications")), ("Search", url_for("web_search"))]
         return items
 
     def web_required(fn):
@@ -235,8 +268,29 @@ def create_app(test_config=None):
     @app.get("/dashboard")
     @web_required
     def web_dashboard():
-        summary = {"employees":Employee.query.count(), "markets":Market.query.count(), "booths":Booth.query.count(), "channel_partners":ChannelPartner.query.count(), "resources":Resource.query.count(), "assigned":Resource.query.filter_by(status="Assigned").count(), "damaged":Resource.query.filter_by(status="Damaged").count(), "lost":Resource.query.filter_by(status="Lost").count(), "open_tasks":FieldTask.query.filter(FieldTask.status.in_(["To Do","In Progress","Blocked"])).count()}
-        return render_template("dashboard.html", summary=summary, menu=web_menu())
+        today = date.today()
+        month_start = today.replace(day=1)
+        total_stock = db.session.query(func.coalesce(func.sum(InventoryStock.quantity), 0)).scalar() or 0
+        low_stock = db.session.query(Product).outerjoin(InventoryStock, InventoryStock.product_id == Product.id).group_by(Product.id).having(func.coalesce(func.sum(InventoryStock.quantity), 0) <= Product.minimum_stock).count()
+        summary = {
+            "total_products": Product.query.count(),
+            "total_stock": total_stock,
+            "low_stock_items": low_stock,
+            "total_customers": Customer.query.count(),
+            "total_partners": ChannelPartner.query.count(),
+            "today_sales": Sale.query.filter_by(sale_date=today).count(),
+            "monthly_sales": db.session.query(func.coalesce(func.sum(Sale.total_amount), 0)).filter(Sale.sale_date >= month_start).scalar() or 0,
+            "pending_orders": Order.query.filter_by(status="Pending").count(),
+            "completed_orders": Order.query.filter_by(status="Completed").count(),
+            "upcoming_visits": Visit.query.filter(Visit.visit_date >= today, Visit.status.in_(["Scheduled", "Confirmed"])).count(),
+            "pending_tasks": FieldTask.query.filter(FieldTask.status.in_(["Pending", "To Do", "In Progress", "Blocked"])).count(),
+            "overdue_tasks": FieldTask.query.filter(FieldTask.due_date < today, FieldTask.status.notin_(["Completed", "Cancelled"])).count(),
+            "upcoming_plan_reminders": Plan.query.filter(Plan.status == "Active", Plan.start_date >= today, Plan.start_date <= today + timedelta(days=7)).count(),
+        }
+        low_stock_rows = db.session.query(Product.sku, Product.name, Product.minimum_stock, func.coalesce(func.sum(InventoryStock.quantity), 0).label("quantity")).outerjoin(InventoryStock, InventoryStock.product_id == Product.id).group_by(Product.id).having(func.coalesce(func.sum(InventoryStock.quantity), 0) <= Product.minimum_stock).limit(10).all()
+        upcoming_visits = Visit.query.filter(Visit.visit_date >= today).order_by(Visit.visit_date).limit(8).all()
+        pending_tasks = FieldTask.query.filter(FieldTask.status.notin_(["Completed", "Cancelled"])).order_by(FieldTask.due_date).limit(8).all()
+        return render_template("dashboard.html", summary=summary, low_stock_rows=low_stock_rows, upcoming_visits=upcoming_visits, pending_tasks=pending_tasks, menu=web_menu())
 
     @app.route("/modules/<module_key>")
     @web_required
@@ -323,13 +377,22 @@ def create_app(test_config=None):
     @app.get("/reports")
     @web_required
     def web_reports():
-        reports = ["resources", "assigned-resources", "lost-resources", "damaged-resources", "transfers", "returns", "markets", "booths", "channel-partners", "employees", "tasks", "audits"]
+        reports = ["products", "customers", "partners", "stock", "stock-movements", "orders", "sales", "visits", "plans", "resources", "assigned-resources", "lost-resources", "damaged-resources", "transfers", "returns", "markets", "booths", "channel-partners", "employees", "tasks", "audits"]
         return render_template("reports.html", reports=reports, menu=web_menu())
 
     @app.get("/reports/<report_name>.csv")
     @web_required
     def web_export_report(report_name):
         report_map = {
+            "products": Product,
+            "customers": Customer,
+            "partners": ChannelPartner,
+            "stock": InventoryStock,
+            "stock-movements": StockMovement,
+            "orders": Order,
+            "sales": Sale,
+            "visits": Visit,
+            "plans": Plan,
             "resources": Resource,
             "assigned-resources": Resource,
             "lost-resources": Resource,
@@ -355,6 +418,147 @@ def create_app(test_config=None):
         rows = [serialize(row) for row in query.limit(5000).all()]
         log("web_export_report", None, report_name); db.session.commit()
         return csv_response(f"{report_name}.csv", rows)
+
+    IMPORT_FIELDS = {
+        "Product": ["sku", "name", "category", "unit", "unit_price", "minimum_stock", "status"],
+        "Customer": ["customer_code", "name", "phone", "email", "location", "status", "notes"],
+        "Partner": ["partner_code", "business_name", "contact_person", "phone", "email", "market_id", "booth_id", "status", "notes"],
+        "Inventory": ["sku", "location_code", "quantity"],
+        "Stock Movement": ["movement_code", "sku", "from_location_code", "to_location_code", "quantity", "movement_type", "notes"],
+        "Order": ["order_number", "customer_code", "partner_code", "status", "order_date", "due_date", "total_amount", "notes"],
+        "Sale": ["sale_number", "customer_code", "partner_code", "sale_date", "total_amount", "status", "notes"],
+        "Visit": ["title", "partner_code", "customer_code", "location", "visit_date", "start_time", "end_time", "purpose", "status", "priority", "notes"],
+        "Task": ["title", "description", "assigned_employee_id", "due_date", "priority", "status", "notes"],
+        "Plan": ["title", "description", "start_date", "end_date", "frequency", "assigned_employee_id", "priority", "status", "reminder_days"],
+        "User": ["username", "role", "employee_id", "active"],
+    }
+
+    def import_field_guess(columns, fields):
+        guesses = {}
+        normalized = {str(c).strip().lower().replace(" ", "_").replace("-", "_"): c for c in columns}
+        aliases = {"product_code": "sku", "product_name": "name", "customer_id": "customer_code", "partner_id": "partner_code", "business_name": "business_name", "qty": "quantity"}
+        for field in fields:
+            if field in normalized:
+                guesses[normalized[field]] = field
+        for source, target in aliases.items():
+            if source in normalized and target in fields:
+                guesses[normalized[source]] = target
+        return guesses
+
+    def workbook_response(filename, headers, example):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Template"
+        ws.append(headers)
+        ws.append(example)
+        notes = wb.create_sheet("Instructions")
+        notes.append(["Column", "Required", "Notes"])
+        for h in headers:
+            notes.append([h, "Yes" if h in headers[:2] else "No", "Map this column during import if your file uses a different header."])
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx")
+        wb.save(tmp.name)
+        return send_file(tmp.name, as_attachment=True, download_name=filename)
+
+    @app.get("/import")
+    @web_required
+    def web_import():
+        return render_template("import.html", data_types=IMPORT_FIELDS, menu=web_menu())
+
+    @app.get("/export")
+    @web_required
+    def web_export():
+        return render_template("export.html", reports=["products", "customers", "partners", "stock", "stock-movements", "orders", "sales", "visits", "tasks", "plans"], menu=web_menu())
+
+    @app.get("/analytics")
+    @web_required
+    def web_analytics():
+        return render_template("analytics.html", menu=web_menu())
+
+    @app.get("/scheduler")
+    @web_required
+    def web_scheduler():
+        visits = Visit.query.order_by(Visit.visit_date).limit(50).all()
+        tasks = FieldTask.query.order_by(FieldTask.due_date).limit(50).all()
+        plans = Plan.query.order_by(Plan.start_date).limit(50).all()
+        return render_template("scheduler.html", visits=visits, tasks=tasks, plans=plans, menu=web_menu())
+
+    @app.get("/templates/<data_type>.xlsx")
+    @web_required
+    def download_template(data_type):
+        label = data_type.replace("-", " ").title()
+        fields = IMPORT_FIELDS.get(label)
+        if not fields:
+            raise NotFound("Template not found")
+        example = [f"Example {field}" if not field.endswith("_date") else date.today().isoformat() for field in fields]
+        return workbook_response(f"marketlink-{data_type}-template.xlsx", fields, example)
+
+    @app.post("/api/import/preview")
+    @auth_required
+    @roles_required("Administrator", "Super Administrator", "Manager")
+    def import_preview():
+        file = request.files.get("file")
+        data_type = request.form.get("data_type", "Product")
+        sheet_name = request.form.get("sheet")
+        if not file or not file.filename.lower().endswith((".xlsx", ".xls")):
+            raise BadRequest("Upload a valid Excel file")
+        wb = load_workbook(file, read_only=True, data_only=True)
+        ws = wb[sheet_name] if sheet_name else wb[wb.sheetnames[0]]
+        rows = list(ws.iter_rows(values_only=True))
+        headers = [str(v).strip() for v in rows[0] if v is not None] if rows else []
+        fields = IMPORT_FIELDS.get(data_type, IMPORT_FIELDS["Product"])
+        mapping = import_field_guess(headers, fields)
+        total = max(len(rows) - 1, 0)
+        return jsonify(sheets=wb.sheetnames, selected_sheet=ws.title, data_type=data_type, total_rows=total, columns=headers, fields=fields, suggested_mapping=mapping)
+
+    @app.post("/api/import/products")
+    @auth_required
+    @roles_required("Administrator", "Super Administrator", "Manager", "Inventory Officer")
+    def import_products():
+        file = request.files.get("file")
+        duplicate_strategy = request.form.get("duplicate_strategy", "skip")
+        if not file or not file.filename.lower().endswith((".xlsx", ".xls")):
+            raise BadRequest("Upload a valid Excel file")
+        wb = load_workbook(file, read_only=True, data_only=True)
+        ws = wb[request.form.get("sheet")] if request.form.get("sheet") else wb[wb.sheetnames[0]]
+        rows = list(ws.iter_rows(values_only=True))
+        if not rows:
+            raise BadRequest("Workbook is empty")
+        headers = [str(v).strip().lower().replace(" ", "_") for v in rows[0]]
+        mapping = {h: h for h in headers}
+        job = ImportJob(filename=secure_filename(file.filename), data_type="Product", sheet_name=ws.title, duplicate_strategy=duplicate_strategy, created_by_id=g.current_user.id, mapping=mapping)
+        db.session.add(job); db.session.flush()
+        imported = failed = skipped = 0
+        for row_num, row in enumerate(rows[1:], start=2):
+            data = {headers[i]: row[i] for i in range(min(len(headers), len(row))) if headers[i]}
+            sku = str(data.get("sku") or data.get("product_code") or "").strip()
+            name = str(data.get("name") or data.get("product_name") or "").strip()
+            if not sku or not name:
+                failed += 1
+                db.session.add(ImportError(job_id=job.id, row_number=row_num, field="sku/name", problem="SKU and product name are required", original_value=str(row)))
+                continue
+            product = Product.query.filter_by(sku=sku).first()
+            if product and duplicate_strategy == "skip":
+                skipped += 1
+                continue
+            if not product:
+                product = Product(sku=sku, name=name)
+                db.session.add(product)
+            product.name = name
+            product.unit = str(data.get("unit") or product.unit or "Each")
+            product.unit_price = float(data.get("unit_price") or data.get("price") or product.unit_price or 0)
+            product.minimum_stock = int(data.get("minimum_stock") or data.get("min_stock") or product.minimum_stock or 0)
+            product.status = str(data.get("status") or product.status or "Active")
+            imported += 1
+        job.total_rows = max(len(rows) - 1, 0)
+        job.imported_rows = imported
+        job.error_rows = failed
+        job.valid_rows = imported
+        job.warning_rows = skipped
+        job.status = "Completed"
+        log("excel_import", job, f"Imported products from {job.filename}")
+        db.session.commit()
+        return jsonify(job_id=job.id, total_rows=job.total_rows, imported=imported, skipped=skipped, failed=failed)
+
     @app.get("/health")
     def health():
         return jsonify(status="ok")
@@ -379,6 +583,9 @@ def create_app(test_config=None):
         "/api/territories": Territory, "/api/markets": Market, "/api/booths": Booth,
         "/api/channel-partners": ChannelPartner, "/api/resource-categories": ResourceCategory,
         "/api/resources": Resource, "/api/resource-requests": ResourceRequest,
+        "/api/products": Product, "/api/customers": Customer, "/api/inventory-locations": InventoryLocation,
+        "/api/stock": InventoryStock, "/api/stock-movements": StockMovement, "/api/orders": Order,
+        "/api/sales": Sale, "/api/visits": Visit, "/api/plans": Plan,
         "/api/resource-incidents": ResourceIncident, "/api/tasks": FieldTask,
         "/api/audits": MarketAudit, "/api/notifications": Notification,
     }.items():
@@ -506,6 +713,15 @@ def create_app(test_config=None):
     @auth_required
     def export_report(report_name):
         report_map = {
+            "products": Product,
+            "customers": Customer,
+            "partners": ChannelPartner,
+            "stock": InventoryStock,
+            "stock-movements": StockMovement,
+            "orders": Order,
+            "sales": Sale,
+            "visits": Visit,
+            "plans": Plan,
             "resources": Resource,
             "assigned-resources": Resource,
             "lost-resources": Resource,
@@ -531,6 +747,60 @@ def create_app(test_config=None):
         rows = [serialize(row) for row in query.limit(5000).all()]
         log("export_report", None, report_name); db.session.commit()
         return csv_response(f"{report_name}.csv", rows)
+    @app.cli.command("db-info")
+    def db_info():
+        uri = app.config["SQLALCHEMY_DATABASE_URI"]
+        safe_uri = uri
+        if "://" in safe_uri and "@" in safe_uri:
+            scheme, rest = safe_uri.split("://", 1)
+            safe_uri = scheme + "://***:***@" + rest.split("@", 1)[1]
+        print(f"Database URI: {safe_uri}")
+        print(f"Provider: {'PostgreSQL/Neon' if uri.startswith('postgresql') else 'SQLite'}")
+        print("Tables:")
+        db.create_all()
+        for table in sorted(db.metadata.tables):
+            mapper = next((m for m in db.Model.registry.mappers if m.local_table.name == table), None)
+            count = "?"
+            if mapper:
+                try:
+                    count = db.session.query(mapper.class_).count()
+                except Exception:
+                    db.session.rollback()
+            print(f"- {table}: {count}")
+
+    @app.cli.command("export-db-csv")
+    def export_db_csv():
+        export_dir = os.path.join(tempfile.gettempdir(), "marketlink-export")
+        os.makedirs(export_dir, exist_ok=True)
+        db.create_all()
+        exported = []
+        for mapper in db.Model.registry.mappers:
+            model = mapper.class_
+            rows = [serialize(row) for row in model.query.limit(100000).all()]
+            path = os.path.join(export_dir, f"{model.__tablename__}.csv")
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                if rows:
+                    writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+                    writer.writeheader(); writer.writerows(rows)
+                else:
+                    handle.write("")
+            exported.append(path)
+        print("Exported CSV backup files:")
+        for path in sorted(exported):
+            print(path)
+
+    @app.cli.command("reset-db")
+    def reset_db():
+        confirmation = os.getenv("MARKETLINK_RESET_CONFIRM", "")
+        if confirmation != "RESET_AIRTEL_MARKETLINK":
+            print("Refusing to reset database. Set MARKETLINK_RESET_CONFIRM=RESET_AIRTEL_MARKETLINK to proceed.")
+            raise SystemExit(2)
+        uri = app.config["SQLALCHEMY_DATABASE_URI"]
+        print(f"Resetting Airtel MarketLink database provider: {'PostgreSQL/Neon' if uri.startswith('postgresql') else 'SQLite'}")
+        db.drop_all()
+        db.create_all()
+        print("Database reset complete. Run `flask --app wsgi:app seed-data` only if you want seed/admin data.")
+
     @app.cli.command("init-db")
     def init_db():
         db.create_all(); print("Database initialized.")

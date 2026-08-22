@@ -1,9 +1,14 @@
-﻿{% extends "base.html" %}
+{% extends "base.html" %}
 {% block content %}
-<div class="topbar"><h1>Dashboard</h1><a class="button secondary" href="{{ url_for('web_reports') }}">Reports</a></div>
-<div class="grid">
+<div class="topbar"><div><h1>Dashboard</h1><p class="muted">Operational overview across sales, inventory, partners, tasks and plans.</p></div><a class="button secondary" href="{{ url_for('web_reports') }}">Reports</a></div>
+<div class="grid dashboard-grid">
   {% for key, value in summary.items() %}
-  <div class="card"><div class="metric-label">{{ key.replace('_', ' ') }}</div><div class="metric-value">{{ value }}</div></div>
+  <div class="card metric-card"><div class="metric-label">{{ key.replace('_', ' ') }}</div><div class="metric-value">{{ value }}</div></div>
   {% endfor %}
+</div>
+<div class="dashboard-panels">
+  <section class="card"><h2>Low Stock Alerts</h2><table><thead><tr><th>SKU</th><th>Product</th><th>Qty</th><th>Min</th></tr></thead><tbody>{% for row in low_stock_rows %}<tr><td>{{ row.sku }}</td><td>{{ row.name }}</td><td>{{ row.quantity }}</td><td>{{ row.minimum_stock }}</td></tr>{% endfor %}{% if not low_stock_rows %}<tr><td colspan="4">No low stock items.</td></tr>{% endif %}</tbody></table></section>
+  <section class="card"><h2>Upcoming Visits</h2><table><thead><tr><th>Visit</th><th>Date</th><th>Status</th></tr></thead><tbody>{% for visit in upcoming_visits %}<tr><td>{{ visit.title }}</td><td>{{ visit.visit_date }}</td><td>{{ visit.status }}</td></tr>{% endfor %}{% if not upcoming_visits %}<tr><td colspan="3">No upcoming visits.</td></tr>{% endif %}</tbody></table></section>
+  <section class="card"><h2>Pending Tasks</h2><table><thead><tr><th>Task</th><th>Due</th><th>Status</th></tr></thead><tbody>{% for task in pending_tasks %}<tr><td>{{ task.title }}</td><td>{{ task.due_date or '-' }}</td><td>{{ task.status }}</td></tr>{% endfor %}{% if not pending_tasks %}<tr><td colspan="3">No pending tasks.</td></tr>{% endif %}</tbody></table></section>
 </div>
 {% endblock %}

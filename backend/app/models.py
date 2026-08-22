@@ -4,6 +4,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from .extensions import db
 
 ROLES = ("Administrator", "ZBM", "TSM", "TL", "TSE", "Chabeba")
+BUSINESS_ROLES = ("Super Administrator", "Manager", "Sales/Agent", "Inventory Officer", "Viewer")
 
 class TimestampMixin:
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
@@ -121,6 +122,126 @@ class ChannelPartner(TimestampMixin, db.Model):
     tl = db.relationship("Employee", foreign_keys=[tl_id])
     tsm = db.relationship("Employee", foreign_keys=[tsm_id])
 
+
+class ProductCategory(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    status = db.Column(db.String(30), default="Active", index=True)
+
+class Product(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sku = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(180), nullable=False, index=True)
+    category_id = db.Column(db.Integer, db.ForeignKey("product_category.id"))
+    description = db.Column(db.Text)
+    unit = db.Column(db.String(40), default="Each")
+    unit_price = db.Column(db.Float, default=0)
+    minimum_stock = db.Column(db.Integer, default=0)
+    status = db.Column(db.String(30), default="Active", index=True)
+    category = db.relationship("ProductCategory", backref="products")
+
+class Customer(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    customer_code = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(180), nullable=False, index=True)
+    phone = db.Column(db.String(40))
+    email = db.Column(db.String(160))
+    location = db.Column(db.String(255))
+    market_id = db.Column(db.Integer, db.ForeignKey("market.id"))
+    assigned_employee_id = db.Column(db.Integer, db.ForeignKey("employee.id"))
+    status = db.Column(db.String(30), default="Active", index=True)
+    notes = db.Column(db.Text)
+    market = db.relationship("Market")
+    assigned_employee = db.relationship("Employee")
+
+class InventoryLocation(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    location_code = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(180), nullable=False)
+    location_type = db.Column(db.String(60), default="Market")
+    market_id = db.Column(db.Integer, db.ForeignKey("market.id"))
+    booth_id = db.Column(db.Integer, db.ForeignKey("booth.id"))
+    partner_id = db.Column(db.Integer, db.ForeignKey("channel_partner.id"))
+    status = db.Column(db.String(30), default="Active", index=True)
+    market = db.relationship("Market")
+    booth = db.relationship("Booth")
+    partner = db.relationship("ChannelPartner")
+
+class InventoryStock(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False, index=True)
+    location_id = db.Column(db.Integer, db.ForeignKey("inventory_location.id"), nullable=False, index=True)
+    quantity = db.Column(db.Integer, default=0, nullable=False)
+    product = db.relationship("Product")
+    location = db.relationship("InventoryLocation")
+    __table_args__ = (db.UniqueConstraint("product_id", "location_id", name="uq_product_location_stock"),)
+
+class StockMovement(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    movement_code = db.Column(db.String(80), unique=True, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False, index=True)
+    from_location_id = db.Column(db.Integer, db.ForeignKey("inventory_location.id"))
+    to_location_id = db.Column(db.Integer, db.ForeignKey("inventory_location.id"))
+    quantity = db.Column(db.Integer, nullable=False)
+    movement_type = db.Column(db.String(40), nullable=False, index=True)
+    reference_type = db.Column(db.String(60))
+    reference_id = db.Column(db.Integer)
+    notes = db.Column(db.Text)
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    product = db.relationship("Product")
+    from_location = db.relationship("InventoryLocation", foreign_keys=[from_location_id])
+    to_location = db.relationship("InventoryLocation", foreign_keys=[to_location_id])
+
+class Order(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_number = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"))
+    partner_id = db.Column(db.Integer, db.ForeignKey("channel_partner.id"))
+    status = db.Column(db.String(40), default="Pending", index=True)
+    order_date = db.Column(db.Date, default=date.today, index=True)
+    due_date = db.Column(db.Date)
+    total_amount = db.Column(db.Float, default=0)
+    notes = db.Column(db.Text)
+    customer = db.relationship("Customer")
+    partner = db.relationship("ChannelPartner")
+
+class OrderItem(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.Integer, db.ForeignKey("order.id"), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    unit_price = db.Column(db.Float, default=0)
+    line_total = db.Column(db.Float, default=0)
+    order = db.relationship("Order", backref="items")
+    product = db.relationship("Product")
+
+class Sale(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sale_number = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"))
+    partner_id = db.Column(db.Integer, db.ForeignKey("channel_partner.id"))
+    employee_id = db.Column(db.Integer, db.ForeignKey("employee.id"))
+    market_id = db.Column(db.Integer, db.ForeignKey("market.id"))
+    sale_date = db.Column(db.Date, default=date.today, index=True)
+    total_amount = db.Column(db.Float, default=0)
+    status = db.Column(db.String(40), default="Completed", index=True)
+    notes = db.Column(db.Text)
+    customer = db.relationship("Customer")
+    partner = db.relationship("ChannelPartner")
+    employee = db.relationship("Employee")
+    market = db.relationship("Market")
+
+class SaleItem(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sale_id = db.Column(db.Integer, db.ForeignKey("sale.id"), nullable=False, index=True)
+    product_id = db.Column(db.Integer, db.ForeignKey("product.id"), nullable=False)
+    quantity = db.Column(db.Integer, nullable=False)
+    unit_price = db.Column(db.Float, default=0)
+    line_total = db.Column(db.Float, default=0)
+    sale = db.relationship("Sale", backref="items")
+    product = db.relationship("Product")
+
 class ResourceCategory(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), unique=True, nullable=False)
@@ -220,6 +341,38 @@ class FieldTask(TimestampMixin, db.Model):
     evidence_path = db.Column(db.String(255))
     comments = db.Column(db.Text)
 
+
+class Visit(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(180), nullable=False)
+    partner_id = db.Column(db.Integer, db.ForeignKey("channel_partner.id"))
+    customer_id = db.Column(db.Integer, db.ForeignKey("customer.id"))
+    location = db.Column(db.String(255))
+    visit_date = db.Column(db.Date, nullable=False, index=True)
+    start_time = db.Column(db.String(20))
+    end_time = db.Column(db.String(20))
+    assigned_employee_id = db.Column(db.Integer, db.ForeignKey("employee.id"))
+    purpose = db.Column(db.String(180))
+    notes = db.Column(db.Text)
+    status = db.Column(db.String(40), default="Scheduled", index=True)
+    priority = db.Column(db.String(20), default="Medium", index=True)
+    partner = db.relationship("ChannelPartner")
+    customer = db.relationship("Customer")
+    assigned_employee = db.relationship("Employee")
+
+class Plan(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    title = db.Column(db.String(180), nullable=False)
+    description = db.Column(db.Text)
+    start_date = db.Column(db.Date, nullable=False, index=True)
+    end_date = db.Column(db.Date)
+    frequency = db.Column(db.String(40), default="Once", index=True)
+    assigned_employee_id = db.Column(db.Integer, db.ForeignKey("employee.id"))
+    priority = db.Column(db.String(20), default="Medium", index=True)
+    status = db.Column(db.String(40), default="Active", index=True)
+    reminder_days = db.Column(db.Integer, default=3)
+    assigned_employee = db.relationship("Employee")
+
 class MarketAudit(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     market_id = db.Column(db.Integer, db.ForeignKey("market.id"), nullable=False)
@@ -236,6 +389,9 @@ class Notification(TimestampMixin, db.Model):
     title = db.Column(db.String(160), nullable=False)
     message = db.Column(db.Text)
     unread = db.Column(db.Boolean, default=True)
+    notification_type = db.Column(db.String(60), default="General", index=True)
+    related_type = db.Column(db.String(80))
+    related_id = db.Column(db.Integer)
 
 class AuditLog(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -244,3 +400,43 @@ class AuditLog(TimestampMixin, db.Model):
     record_type = db.Column(db.String(80))
     record_id = db.Column(db.Integer)
     description = db.Column(db.Text)
+
+
+class NotificationPreference(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False, index=True)
+    notification_type = db.Column(db.String(80), nullable=False)
+    in_app_enabled = db.Column(db.Boolean, default=True)
+    email_enabled = db.Column(db.Boolean, default=False)
+    sms_enabled = db.Column(db.Boolean, default=False)
+    user = db.relationship("User")
+    __table_args__ = (db.UniqueConstraint("user_id", "notification_type", name="uq_user_notification_pref"),)
+
+class ImportJob(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)
+    data_type = db.Column(db.String(80), nullable=False, index=True)
+    sheet_name = db.Column(db.String(120))
+    status = db.Column(db.String(40), default="Uploaded", index=True)
+    total_rows = db.Column(db.Integer, default=0)
+    valid_rows = db.Column(db.Integer, default=0)
+    warning_rows = db.Column(db.Integer, default=0)
+    error_rows = db.Column(db.Integer, default=0)
+    imported_rows = db.Column(db.Integer, default=0)
+    duplicate_strategy = db.Column(db.String(40), default="skip")
+    created_by_id = db.Column(db.Integer, db.ForeignKey("user.id"))
+    mapping = db.Column(db.JSON, default=dict)
+    summary = db.Column(db.JSON, default=dict)
+    created_by = db.relationship("User")
+
+class ImportError(TimestampMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    job_id = db.Column(db.Integer, db.ForeignKey("import_job.id"), nullable=False, index=True)
+    row_number = db.Column(db.Integer)
+    field = db.Column(db.String(120))
+    problem = db.Column(db.Text, nullable=False)
+    original_value = db.Column(db.Text)
+    suggested_correction = db.Column(db.Text)
+    severity = db.Column(db.String(20), default="error", index=True)
+    job = db.relationship("ImportJob", backref="errors")
+

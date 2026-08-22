@@ -101,3 +101,42 @@ def test_web_login_dashboard_module_and_reports(client):
     assert csv_response.status_code == 200
     assert csv_response.mimetype == 'text/csv'
 
+
+
+
+def test_product_template_and_excel_import(client):
+    from io import BytesIO
+    from openpyxl import Workbook
+    from backend.app.models import Product
+
+    headers = auth(client)
+    login = web_login(client)
+    assert login.status_code == 200
+    template = client.get('/templates/product.xlsx')
+    assert template.status_code == 200
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Products'
+    ws.append(['sku', 'name', 'unit_price', 'minimum_stock', 'status'])
+    ws.append(['AIR-10GB', 'Airtel 10GB Bundle', 50, 10, 'Active'])
+    payload = BytesIO()
+    wb.save(payload)
+    payload.seek(0)
+
+    response = client.post(
+        '/api/import/products',
+        headers=headers,
+        data={'duplicate_strategy': 'update', 'file': (payload, 'products.xlsx')},
+        content_type='multipart/form-data',
+    )
+    assert response.status_code == 200
+    assert response.get_json()['imported'] == 1
+    with client.application.app_context():
+        product = Product.query.filter_by(sku='AIR-10GB').first()
+        assert product is not None
+        assert product.name == 'Airtel 10GB Bundle'
+
+    exported = client.get('/reports/products.csv')
+    assert exported.status_code == 200
+    assert b'AIR-10GB' in exported.data
